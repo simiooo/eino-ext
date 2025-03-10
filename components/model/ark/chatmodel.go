@@ -616,6 +616,7 @@ func toArkToolCalls(toolCalls []schema.ToolCall) []*model.ToolCall {
 				Arguments: toolCall.Function.Arguments,
 				Name:      toolCall.Function.Name,
 			},
+			Index: toolCall.Index,
 		}
 	}
 
