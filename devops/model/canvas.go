@@ -73,6 +73,7 @@ type GenLocalState struct {
 }
 
 type Node struct {
+	ID   string   `json:"id"`
 	Key  string   `json:"key"`
 	Name string   `json:"name"`
 	Type NodeType `json:"type"`
