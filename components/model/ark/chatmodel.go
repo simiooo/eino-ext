@@ -575,10 +575,12 @@ func toArkContent(content string, multiContent []schema.ChatMessagePart) (*model
 	for _, part := range multiContent {
 		switch part.Type {
 		case schema.ChatMessagePartTypeText:
-			parts = append(parts, &model.ChatCompletionMessageContentPart{
-				Type: model.ChatCompletionMessageContentPartTypeText,
-				Text: part.Text,
-			})
+			if len(part.Text) > 0 {
+				parts = append(parts, &model.ChatCompletionMessageContentPart{
+					Type: model.ChatCompletionMessageContentPartTypeText,
+					Text: part.Text,
+				})
+			}
 		case schema.ChatMessagePartTypeImageURL:
 			if part.ImageURL == nil {
 				return nil, fmt.Errorf("ImageURL field must not be nil when Type is ChatMessagePartTypeImageURL")
