@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/components"
+	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
@@ -136,8 +137,51 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 			callbacks.OnError(ctx, err)
 		}
 	}()
-
 	resp, err := e.client.CreateEmbeddings(ctx, &req)
+	if err != nil {
+		return nil, fmt.Errorf("[Ark]EmbedStrings error: %v", err)
+	}
+
+	var usage *embedding.TokenUsage
+
+	usage = &embedding.TokenUsage{
+		PromptTokens:     resp.Usage.PromptTokens,
+		CompletionTokens: resp.Usage.CompletionTokens,
+		TotalTokens:      resp.Usage.TotalTokens,
+	}
+
+	embeddings = make([][]float64, len(resp.Data))
+	for i, d := range resp.Data {
+		embeddings[i] = toFloat64(d.Embedding)
+	}
+
+	callbacks.OnEnd(ctx, &embedding.CallbackOutput{
+		Embeddings: embeddings,
+		Config:     conf,
+		TokenUsage: usage,
+	})
+
+	return embeddings, nil
+}
+
+func (e *Embedder) EmbedContents(ctx context.Context, texts []*schema.ChatMessagePart, opts ...embedding.Option) (vectors [][]float64, err error) {
+	req := e.genRequest(texts, opts...)
+	conf := &embedding.Config{
+		Model:          req.Model,
+		EncodingFormat: string(req.EncodingFormat),
+	}
+
+	ctx = callbacks.EnsureRunInfo(ctx, e.GetType(), components.ComponentOfEmbedding)
+	ctx = callbacks.OnStart(ctx, &embedding.CallbackInput{
+		Texts:  texts,
+		Config: conf,
+	})
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
+	resp, err := e.client.CreateMultiModalEmbeddings(ctx, &req)
 	if err != nil {
 		return nil, fmt.Errorf("[Ark]EmbedStrings error: %v", err)
 	}
@@ -187,6 +231,19 @@ func (e *Embedder) genRequest(texts []string, opts ...embedding.Option) (
 	}
 
 	return req
+}
+
+func (e *Embedder) genMultiModalRequest(texts []*schema.ChatMessagePart, opts ...embedding.Option) *model.MultiModalEmbeddingRequest {
+	options := &embedding.Options{
+		Model: &e.conf.Model,
+	}
+
+	options = embedding.GetCommonOptions(options, opts...)
+
+	return &model.MultiModalEmbeddingRequest{
+		Input: texts,
+		Model: dereferenceOrZero(options.Model),
+	}
 }
 
 func toFloat64(in []float32) []float64 {
