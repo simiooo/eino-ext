@@ -164,16 +164,19 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 	return embeddings, nil
 }
 
-func (e *Embedder) EmbedContents(ctx context.Context, texts []*schema.ChatMessagePart, opts ...embedding.Option) (vectors [][]float64, err error) {
-	req := e.genRequest(texts, opts...)
+func (e *Embedder) EmbedContents(ctx context.Context, contents []*schema.ChatMessagePart, opts ...embedding.Option) (vectors []float64, err error) {
+	req, err := e.genMultiModalRequest(contents, opts...)
+	if err != nil {
+		return nil, err
+	}
 	conf := &embedding.Config{
 		Model:          req.Model,
-		EncodingFormat: string(req.EncodingFormat),
+		EncodingFormat: string(model.EmbeddingEncodingFormatFloat), // by default
 	}
 
 	ctx = callbacks.EnsureRunInfo(ctx, e.GetType(), components.ComponentOfEmbedding)
 	ctx = callbacks.OnStart(ctx, &embedding.CallbackInput{
-		Texts:  texts,
+		//Contents: contents, todo
 		Config: conf,
 	})
 	defer func() {
@@ -181,7 +184,7 @@ func (e *Embedder) EmbedContents(ctx context.Context, texts []*schema.ChatMessag
 			callbacks.OnError(ctx, err)
 		}
 	}()
-	resp, err := e.client.CreateMultiModalEmbeddings(ctx, &req)
+	resp, err := e.client.CreateMultiModalEmbeddings(ctx, *req)
 	if err != nil {
 		return nil, fmt.Errorf("[Ark]EmbedStrings error: %v", err)
 	}
@@ -189,18 +192,14 @@ func (e *Embedder) EmbedContents(ctx context.Context, texts []*schema.ChatMessag
 	var usage *embedding.TokenUsage
 
 	usage = &embedding.TokenUsage{
-		PromptTokens:     resp.Usage.PromptTokens,
-		CompletionTokens: resp.Usage.CompletionTokens,
-		TotalTokens:      resp.Usage.TotalTokens,
+		PromptTokens: resp.Usage.PromptTokens,
+		TotalTokens:  resp.Usage.TotalTokens,
 	}
 
-	embeddings = make([][]float64, len(resp.Data))
-	for i, d := range resp.Data {
-		embeddings[i] = toFloat64(d.Embedding)
-	}
+	embeddings := toFloat64(resp.Data.Embedding)
 
 	callbacks.OnEnd(ctx, &embedding.CallbackOutput{
-		Embeddings: embeddings,
+		Embeddings: [][]float64{embeddings},
 		Config:     conf,
 		TokenUsage: usage,
 	})
@@ -233,16 +232,49 @@ func (e *Embedder) genRequest(texts []string, opts ...embedding.Option) (
 	return req
 }
 
-func (e *Embedder) genMultiModalRequest(texts []*schema.ChatMessagePart, opts ...embedding.Option) *model.MultiModalEmbeddingRequest {
+func (e *Embedder) genMultiModalRequest(contents []*schema.ChatMessagePart, opts ...embedding.Option) (*model.MultiModalEmbeddingRequest, error) {
 	options := &embedding.Options{
 		Model: &e.conf.Model,
 	}
 
 	options = embedding.GetCommonOptions(options, opts...)
 
+	inputs := make([]model.MultimodalEmbeddingInput, 0, len(contents))
+	for _, content := range contents {
+		input, err := multiModalContent2Input(content)
+		if err != nil {
+			return nil, err
+		}
+		inputs = append(inputs, input)
+	}
+
 	return &model.MultiModalEmbeddingRequest{
-		Input: texts,
+		Input: inputs,
 		Model: dereferenceOrZero(options.Model),
+	}, nil
+}
+
+func multiModalContent2Input(content *schema.ChatMessagePart) (input model.MultimodalEmbeddingInput, err error) {
+	if content == nil {
+		return input, fmt.Errorf("multi modal content is nil")
+	}
+
+	switch content.Type {
+	case schema.ChatMessagePartTypeText:
+		return model.MultimodalEmbeddingInput{
+			Type: model.MultiModalEmbeddingInputTypeText,
+			Text: &content.Text,
+		}, nil
+	case schema.ChatMessagePartTypeImageURL:
+		if content.ImageURL == nil {
+			return input, fmt.Errorf("multi modal image url is nil")
+		}
+		return model.MultimodalEmbeddingInput{
+			Type:     model.MultiModalEmbeddingInputTypeImageURL,
+			ImageURL: &model.MultimodalEmbeddingImageURL{URL: content.ImageURL.URL},
+		}, nil
+	default:
+		return input, fmt.Errorf("unknown multi modal type: %v", content.Type)
 	}
 }
 

@@ -21,6 +21,8 @@ import (
 	"log"
 	"os"
 
+	"github.com/cloudwego/eino/schema"
+
 	"github.com/cloudwego/eino-ext/components/embedding/ark"
 )
 
@@ -34,15 +36,34 @@ func main() {
 		Model:  os.Getenv("ARK_MODEL"),   // for example, "ep-20240909094235-xxxx"
 	})
 	if err != nil {
-		log.Printf("new embedder error: %v\n", err)
+		log.Fatalf("new embedder error: %v\n", err)
 		return
 	}
 
-	embedding, err := embedder.EmbedStrings(ctx, []string{"hello world", "hello world"})
+	// string embedding
+	embeddings, err := embedder.EmbedStrings(ctx, []string{"hello world", "hello world"})
 	if err != nil {
-		log.Printf("embedding error: %v\n", err)
+		log.Fatalf("embedding error: %v\n", err)
 		return
 	}
 
-	log.Printf("embedding: %v\n", embedding)
+	log.Printf("string embedding: %v\n", embeddings)
+
+	// multi-modal embedding
+	embedding, err := embedder.EmbedContents(ctx, []*schema.ChatMessagePart{
+		{
+			Type: schema.ChatMessagePartTypeImageURL,
+			ImageURL: &schema.ChatMessageImageURL{
+				URL: "https://ck-test.tos-cn-beijing.volces.com/vlm/pexels-photo-27163466.jpeg",
+			},
+		},
+		{
+			Type: schema.ChatMessagePartTypeText,
+			Text: "图片分别有什么",
+		},
+	})
+	if err != nil {
+		log.Fatalf("embedding error: %v\n", err)
+	}
+	log.Printf("multi-modal embedding: %+v\n", embedding)
 }
